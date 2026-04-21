@@ -3,6 +3,10 @@ spring:
     name: paystream
   profiles:
     active: dev
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/paystream
+    username: paystream
+    password: paystream
 
 server:
   port: 8080
