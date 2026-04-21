@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: paystream
+  profiles:
+    active: dev
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.paystream: DEBUG
+    org.springframework: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
