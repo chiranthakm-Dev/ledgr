@@ -2,7 +2,10 @@ package com.paystream.api;
 
 import com.paystream.api.dto.PaymentRequest;
 import com.paystream.api.dto.PaymentResponse;
+import com.paystream.domain.AuditEntry;
 import com.paystream.domain.Payment;
+import com.paystream.metrics.PaymentMetrics;
+import com.paystream.repository.AuditEntryRepository;
 import com.paystream.repository.PaymentRepository;
 import com.paystream.saga.PaymentSaga;
 import org.springframework.http.ResponseEntity;
@@ -16,11 +19,15 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentRepository paymentRepository;
+    private final AuditEntryRepository auditRepository;
     private final PaymentSaga paymentSaga;
+    private final PaymentMetrics metrics;
 
-    public PaymentController(PaymentRepository paymentRepository, PaymentSaga paymentSaga) {
+    public PaymentController(PaymentRepository paymentRepository, AuditEntryRepository auditRepository, PaymentSaga paymentSaga, PaymentMetrics metrics) {
         this.paymentRepository = paymentRepository;
+        this.auditRepository = auditRepository;
         this.paymentSaga = paymentSaga;
+        this.metrics = metrics;
     }
 
     @PostMapping
@@ -55,7 +62,21 @@ public class PaymentController {
         );
 
         return paymentRepository.save(payment)
+            .flatMap(saved -> auditRepository.save(new AuditEntry(
+                UUID.randomUUID(),
+                saved.id(),
+                null,
+                saved.status().name(),
+                "system",
+                "Payment created",
+                null,
+                java.time.Instant.now()
+            )).thenReturn(saved))
             .flatMap(saved -> paymentSaga.execute(saved))
+            .map(completed -> {
+                metrics.incrementPayments(completed.status().name().toLowerCase(), completed.currency());
+                return completed;
+            })
             .map(PaymentResponse::from)
             .map(ResponseEntity::accepted);
     }

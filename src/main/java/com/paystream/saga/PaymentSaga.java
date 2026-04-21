@@ -1,7 +1,9 @@
 package com.paystream.saga;
 
 import com.paystream.domain.Payment;
+import com.paystream.metrics.PaymentMetrics;
 import com.paystream.saga.steps.*;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -17,14 +19,23 @@ public class PaymentSaga {
         new NotifyMerchantStep()
     );
 
+    private final PaymentMetrics metrics;
+
+    public PaymentSaga(PaymentMetrics metrics) {
+        this.metrics = metrics;
+    }
+
     public Mono<Payment> execute(Payment payment) {
+        Timer.Sample sample = metrics.startSagaTimer();
         return Flux.fromIterable(steps)
             .concatMap(step -> step.execute(payment)
                 .onErrorResume(error ->
                     rollback(payment, steps.indexOf(step), error)
                 )
             )
-            .then(Mono.just(payment));
+            .then(Mono.just(payment))
+            .doOnSuccess(p -> metrics.recordSagaDuration(sample))
+            .doOnError(e -> metrics.recordSagaDuration(sample));
     }
 
     private Mono<Void> rollback(Payment payment, int failedAt, Throwable cause) {
